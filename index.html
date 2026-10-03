@@ -115,7 +115,9 @@ li.cur .tx b{color:var(--acc)}
 .h{background:none;border:0;padding:12px 4px 12px 14px;color:var(--mute);touch-action:none;cursor:grab}
 li.lift{z-index:2;box-shadow:0 8px 22px rgba(0,0,0,.4)}
 .empty{padding:16px;text-align:center;color:var(--mute);margin:0;font-size:.9rem}
-#toast{position:fixed;left:50%;bottom:calc(100px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--glass);color:var(--ink);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 6px 24px rgba(0,0,0,.3),0 0 0 .5px var(--line);padding:10px 18px;border-radius:999px;font-size:.9rem;font-weight:500;z-index:20;max-width:90vw;text-align:center}
+#toast{position:fixed;left:0;right:0;margin:0 auto;width:max-content;bottom:calc(100px + env(safe-area-inset-bottom,0px));background:var(--glass);color:var(--ink);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 6px 24px rgba(0,0,0,.3),0 0 0 .5px var(--line);padding:10px 18px;border-radius:999px;font-size:.9rem;font-weight:500;z-index:20;max-width:90vw;text-align:center}
+#upd{position:fixed;left:0;right:0;margin:0 auto;width:max-content;max-width:94vw;top:calc(env(safe-area-inset-top,0px) + 8px);z-index:30;display:flex;align-items:center;gap:12px;background:var(--glass);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 6px 24px rgba(0,0,0,.3),0 0 0 .5px var(--line);padding:6px 6px 6px 16px;border-radius:999px;font-size:.9rem;font-weight:500;color:var(--ink)}
+#upd button{border:0;border-radius:999px;background:var(--acc);color:var(--on);padding:7px 16px;font-weight:700}
 body.drop{outline:3px dashed var(--acc);outline-offset:-10px}
 @keyframes fade{from{opacity:0;transform:translateY(8px)}}
 @keyframes rise{from{transform:translateY(100%);opacity:0}}
@@ -173,6 +175,7 @@ li .m:active{background:var(--fill)}
   </div>
 </div>
 
+<div id="upd" hidden><span>A new version is ready</span><button id="updb">Update</button></div>
 <div id="toast" role="status" hidden></div>
 <input type="file" id="file" accept="audio/*,.mp3" multiple hidden>
 <audio id="a" preload="metadata" playsinline></audio>
@@ -343,7 +346,7 @@ function theme(){
 }
 function renderSettings(L){
   const back=el('button','ghost','‹ Library');back.onclick=()=>{S.view=null;save();renderLists()};
-  L.append(back,el('h2','pg','Appearance'),el('h3','','Theme'));
+  L.append(back,el('h2','pg','Settings'),el('h3','','Theme'));
   const c1=el('div','card'),ch=el('div','chips');
   [['system','System'],['light','Light'],['dark','Dark'],['black','Black']].forEach(([v,n])=>{const b=el('button','chip'+(S.ui.theme==v?' on':''),n);b.onclick=()=>{S.ui.theme=v;theme();save();renderLists()};ch.append(b)});
   c1.append(ch);L.append(c1,el('h3','','Highlight color'));
@@ -354,13 +357,24 @@ function renderSettings(L){
   ci.type='color';ci.value=S.ui.acc||'#0a84ff';ci.setAttribute('aria-label','Custom color');
   ci.oninput=()=>{S.ui.acc=ci.value;theme();save()};ci.onchange=()=>renderLists();
   cu.append(ci);c2.append(cu);L.append(c2);
+  L.append(el('h3','','About'));
+  const c3=el('div','card'),r1=el('div','rr'),ub=el('button','add',swWait?'Update now':'Check for updates'),msg=el('p','d','');
+  r1.append(el('span','','Version'),el('output','','v'+VER));
+  msg.style.margin='8px 0 0';ub.style.marginTop='10px';
+  ub.onclick=async()=>{
+    if(swWait){applyUpd();return}
+    ub.textContent='Checking…';const r=await checkUpd();
+    if(r=='available'){ub.textContent='Update now';msg.textContent='A new version is ready.'}
+    else{ub.textContent='Check for updates';msg.textContent=r=='current'?'You have the latest version.':r=='offline'?'Could not reach the server. Try again when online.':'Updates only work in the installed app.'}
+  };
+  c3.append(r1,ub,msg);L.append(c3);
 }
 function renderLists0(){
   const L=$('lists');L.textContent='';
   if(S.view==='_set')return renderSettings(L);
   const p=S.pl.find(x=>x.id==S.view);
   if(!p){
-    S.view=null;{const hd=el('div','hd'),g=el('button','ib');hd.append(el('h2','pg','Library'));g.setAttribute('aria-label','Appearance');g.innerHTML='<svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22L2.67 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.12.22.37.29.61.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.25.42.49.42h3.84c.24 0 .44-.18.49-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.09.49 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>';g.onclick=()=>{S.view='_set';renderLists()};hd.append(g);L.append(hd)}
+    S.view=null;{const hd=el('div','hd'),g=el('button','ib');hd.append(el('h2','pg','Library'));g.setAttribute('aria-label','Settings');g.innerHTML='<svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22L2.67 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.12.22.37.29.61.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.25.42.49.42h3.84c.24 0 .44-.18.49-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.09.49 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>';g.onclick=()=>{S.view='_set';renderLists()};hd.append(g);L.append(hd)}
     const bar=el('div','bar'),i=el('input');i.type='text';i.placeholder='New playlist name';i.setAttribute('aria-label','New playlist name');
     const b=el('button','add','Create');
     const mk=()=>{const n=i.value.trim();if(!n)return;const q={id:uid(),name:n,sort:'added',dir:1};S.pl.push(q);S.view=q.id;save();renderLists()};
@@ -571,7 +585,31 @@ addEventListener('keydown',e=>{
 });
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&ctx&&ctx.state!=='running'&&!a.paused)ctx.resume().catch(()=>{})});
 addEventListener('pagehide',()=>{S.t=a.currentTime;put('state',JSON.stringify(S))});
-if('mediaSession' in navigator){const m=navigator.mediaSession;m.setActionHandler('nexttrack',next);m.setActionHandler('previoustrack',prev);m.setActionHandler('seekto',d=>{a.currentTime=d.seekTime})}
+if('mediaSession' in navigator){const m=navigator.mediaSession;m.setActionHandler('play',()=>{if(!a.getAttribute('src')||a.error){seek=S.t;load(true)}else start()});m.setActionHandler('pause',()=>a.pause());m.setActionHandler('nexttrack',next);m.setActionHandler('previoustrack',prev);m.setActionHandler('seekto',d=>{a.currentTime=d.seekTime})}
+
+/* ---------- app updates ---------- */
+const VER='5';
+let swReg=null,swWait=null,updating=false;
+const updUI=()=>{$('upd').hidden=!swWait};
+function applyUpd(){updating=true;if(swWait)swWait.postMessage('skip');else location.reload()}
+async function checkUpd(){
+  if(!swReg)return 'none';
+  try{await swReg.update()}catch(e){return 'offline'}
+  const w=swReg.installing;
+  if(w&&!swReg.waiting)await new Promise(r=>w.addEventListener('statechange',()=>{if(w.state=='installed'||w.state=='redundant')r()}));
+  if(swReg.waiting&&navigator.serviceWorker.controller){swWait=swReg.waiting;updUI();return 'available'}
+  return 'current';
+}
+$('updb').onclick=applyUpd;
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').then(r=>{
+    swReg=r;
+    if(r.waiting&&navigator.serviceWorker.controller){swWait=r.waiting;updUI()}
+    r.addEventListener('updatefound',()=>{const w=r.installing;w.addEventListener('statechange',()=>{if(w.state=='installed'&&navigator.serviceWorker.controller){swWait=w;updUI()}})});
+  }).catch(()=>{});
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(updating)location.reload()});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkUpd()});
+}
 
 /* ---------- boot: restore saved state ---------- */
 (async()=>{
@@ -581,7 +619,6 @@ if('mediaSession' in navigator){const m=navigator.mediaSession;m.setActionHandle
   if(S.pos>=0&&cur()){seek=S.t;await load(false)}else renderAll();
 })();
 </script>
-<script>['gesturestart','gesturechange','gestureend'].forEach(t=>addEventListener(t,e=>e.preventDefault()));
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))</script>
+<script>['gesturestart','gesturechange','gestureend'].forEach(t=>addEventListener(t,e=>e.preventDefault()));</script>
 </body>
 </html>
