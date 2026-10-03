@@ -181,7 +181,8 @@ li .m:active{background:var(--fill)}
 <audio id="a" preload="metadata" playsinline></audio>
 
 <script>
-const $=id=>document.getElementById(id),a=$('a');
+const $=id=>document.getElementById(id),A0=$('a');let a=A0;
+const A1=document.createElement('audio');A1.preload='metadata';A1.setAttribute('playsinline','');A1.hidden=true;document.body.append(A1);
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 const C=2*Math.PI*88,uid=()=>Math.random().toString(36).slice(2,10);
 const fmt=s=>{if(!isFinite(s)||!s)return'0:00';s=Math.floor(s);return(s/60|0)+':'+String(s%60).padStart(2,'0')};
@@ -190,7 +191,7 @@ const EQP={Flat:[0,0,0,0,0],'Bass Boost':[8,5,1,0,0],Rock:[5,3,-2,3,5],Pop:[-1,3
 const RVP={Off:{mix:0,decay:1},Room:{mix:.25,decay:.8},Hall:{mix:.35,decay:2.8}};
 const S={tracks:[],pl:[],order:[],pos:-1,orig:null,shuf:false,hist:[],rep:0,eq:[0,0,0,0,0],rv:{name:'Off',mix:0,decay:1},rate:1,vol:1,t:0,view:null,ui:{theme:'system',acc:null}};
 const T=id=>S.tracks.find(t=>t.id==id),cur=()=>T(S.order[S.pos]);
-let impTo=null,seek=0,lt=0,lp=0,sk=false,paintedId=null,lid=0;
+let impTo=null,seek=0,lt=0,lp=0,sk=false,paintedId=null,lid=0,rsm=false;
 
 /* ---------- storage (IndexedDB) ---------- */
 let db;
@@ -253,7 +254,7 @@ function fx(){
   const c=new(window.AudioContext||window.webkitAudioContext)();
   const p=c.createGain(),d=c.createGain(),w=c.createGain(),cv=c.createConvolver(),lim=c.createDynamicsCompressor(),fl=[];
   lim.threshold.value=-3;lim.knee.value=0;lim.ratio.value=20;lim.attack.value=.003;lim.release.value=.1;
-  let n=c.createMediaElementSource(a);n.connect(p);n=p;
+  let n=c.createMediaElementSource(A1);n.connect(p);n=p;
   [60,230,910,3600,14000].forEach((f,i)=>{const b=c.createBiquadFilter();b.type=i==0?'lowshelf':i==4?'highshelf':'peaking';b.frequency.value=f;b.Q.value=1;n.connect(b);n=b;fl.push(b)});
   n.connect(d);n.connect(cv);cv.connect(w);d.connect(lim);w.connect(lim);lim.connect(c.destination);
   ctx=c;F=fl;pre=p;dry=d;wet=w;conv=cv;eqNow();setRv();
@@ -270,11 +271,34 @@ function applyMix(){if(!ctx)return;wet.gain.cancelScheduledValues(0);dry.gain.va
 /* On pause: fade the wet bus out, then swap in a fresh (empty) impulse so no reverb tail can leak out later. */
 function tailOff(){if(!ctx)return;clearTimeout(tt);wet.gain.cancelScheduledValues(0);wet.gain.setTargetAtTime(0,ctx.currentTime,.012);tt=setTimeout(()=>{if(a.paused)setRv()},150)}
 function tailOn(){if(!ctx)return;clearTimeout(tt);wet.gain.cancelScheduledValues(0);wet.gain.setTargetAtTime(S.rv.mix*1.6,ctx.currentTime,.02)}
-function setRate(r){S.rate=r;a.defaultPlaybackRate=a.playbackRate=r;a.preservesPitch=a.webkitPreservesPitch=a.mozPreservesPitch=true}
+function setRate(r){S.rate=r;[A0,A1].forEach(e=>{e.defaultPlaybackRate=e.playbackRate=r;e.preservesPitch=e.webkitPreservesPitch=e.mozPreservesPitch=true})}
 try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
 const needFx=()=>S.eq.some(v=>v)||S.rv.mix>0;
-function route(){if(!ctx&&needFx()){try{fx();ctx.resume()}catch(e){}}}
-const start=()=>{try{route();ctx&&ctx.resume()}catch(e){}return a.play().catch(()=>{})};
+function route(){
+  if(needFx()&&!ctx){try{fx()}catch(e){return}}
+  if(ctx&&needFx()&&ctx.state!=='running')ctx.resume().then(upgrade,()=>{});else upgrade();
+}
+/* Effects need the Web Audio engine, which iOS can shut down while paused or locked.
+   So playback uses the plain element A0 whenever the engine is unavailable, and the effects element A1 only while it is running. */
+const pick=()=>needFx()&&ctx&&ctx.state==='running'?A1:A0;
+function useEl(n,pl){
+  if(n===a)return;
+  const o=a,was=pl===undefined?!o.paused:pl,t=o.currentTime,src=o.getAttribute('src');
+  a=n;o.pause();
+  if(!src)return;
+  a.src=src;setRate(S.rate);seek=t;rsm=was;
+  o.removeAttribute('src');o.load();
+}
+function upgrade(){if(document.hidden)return;const w=needFx()?pick():A0;if(w!==a)useEl(w)}
+const start=bg=>{
+  if(needFx()&&!ctx){try{fx()}catch(e){}}
+  if(ctx&&ctx.state!=='running')ctx.resume().then(upgrade,()=>{});
+  if(a===A1&&bg&&ctx&&ctx.state!=='running')useEl(A0,false);
+  else if(a===A0&&pick()===A1)useEl(A1,false);
+  const p=a.play().catch(()=>{});
+  if(a===A1)setTimeout(()=>{if(a===A1&&!a.paused&&ctx&&ctx.state!=='running')useEl(A0)},600);
+  return p;
+};
 
 /* ---------- playback + queue ---------- */
 const pushH=id=>{S.hist=[id,...S.hist.filter(x=>x!=id)].slice(0,50)};
@@ -521,20 +545,23 @@ function draw(){
 }
 const PLAY='M8 5v14l11-7z',PAUSE='M6 5h4v14H6zm8 0h4v14h-4z';
 const icon=p=>{const v=`<svg viewBox="0 0 24 24"><path d="${p?PAUSE:PLAY}"/></svg>`,l=p?'Pause':'Play';$('play').innerHTML=v;$('mp').innerHTML=v;$('play').setAttribute('aria-label',l);$('mp').setAttribute('aria-label',l);$('sheet').classList.toggle('paused',!p)};
-a.ontimeupdate=()=>{
+const H={};
+H.ontimeupdate=()=>{
   draw();S.t=a.currentTime;
   if(Date.now()-lt>3000){lt=Date.now();save()}
   if('mediaSession' in navigator&&a.duration&&Date.now()-lp>1000){lp=Date.now();try{navigator.mediaSession.setPositionState({duration:a.duration,playbackRate:a.playbackRate,position:Math.min(a.currentTime,a.duration)})}catch(e){}}
 };
-a.onloadedmetadata=()=>{
+H.onloadedmetadata=()=>{
   const t=cur();if(t&&t.dur!=a.duration){t.dur=a.duration;save();renderLists()}
-  if(seek){a.currentTime=seek;seek=0}
+  if(seek){a.currentTime=seek;seek=0}if(rsm){rsm=false;start()}
   setRate(S.rate);draw();
 };
-a.onplay=()=>{icon(true);tailOn();if(ctx&&ctx.state!=='running')ctx.resume().catch(()=>{});if('mediaSession' in navigator)navigator.mediaSession.playbackState='playing'};
-a.onpause=()=>{icon(false);tailOff();if('mediaSession' in navigator)navigator.mediaSession.playbackState='paused'};
-a.onerror=()=>{if(a.getAttribute('src'))toast('This file can\u2019t be played')};
-a.onended=()=>{if(S.rep==2){a.currentTime=0;start()}else next()};
+H.onplay=()=>{icon(true);tailOn();if(ctx&&ctx.state!=='running')ctx.resume().catch(()=>{});if('mediaSession' in navigator)navigator.mediaSession.playbackState='playing'};
+H.onpause=()=>{icon(false);tailOff();if('mediaSession' in navigator)navigator.mediaSession.playbackState='paused'};
+H.onerror=()=>{if(a.getAttribute('src'))toast('This file can\u2019t be played')};
+H.onended=()=>{if(S.rep==2){a.currentTime=0;start()}else next()};
+
+[A0,A1].forEach(el=>Object.keys(H).forEach(k=>{el[k]=e=>{if(el===a)H[k](e)}}));
 
 /* ---------- effects UI ---------- */
 function chips(box,obj,on,fn){box.textContent='';Object.keys(obj).forEach(k=>{const b=el('button','chip'+(on(k)?' on':''),k);b.onclick=()=>fn(k);box.append(b)})}
@@ -563,7 +590,7 @@ sb.oninput=()=>{if(a.duration)a.currentTime=sb.value/1000*a.duration;sb.style.se
 $('play').onclick=$('mp').onclick=toggle;
 $('next').onclick=$('mn').onclick=next;$('prev').onclick=prev;$('shuf').onclick=toggleShuf;
 $('rep').onclick=()=>{S.rep=(S.rep+1)%3;save();draw()};
-$('vol').oninput=e=>{a.volume=S.vol=+e.target.value;e.target.style.setProperty('--p',e.target.value*100+'%');save()};
+$('vol').oninput=e=>{S.vol=+e.target.value;A0.volume=A1.volume=S.vol;e.target.style.setProperty('--p',e.target.value*100+'%');save()};
 $('file').onchange=e=>{if(impTo)imp([...e.target.files],impTo);e.target.value=''};
 
 function view(v){['np','qv','fx'].forEach(id=>$(id).hidden=id!=v);[...$('seg').children].forEach(b=>b.classList.toggle('on',b.dataset.v==v))}
@@ -583,12 +610,13 @@ addEventListener('keydown',e=>{
   if(e.key=='Escape'&&sheet.classList.contains('open'))closeSheet();
   if(e.code=='Space'&&e.target==document.body){e.preventDefault();toggle()}
 });
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&ctx&&ctx.state!=='running'&&!a.paused)ctx.resume().catch(()=>{})});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)route()});
+document.addEventListener('pointerdown',()=>{if(needFx()&&a===A0)route()},{passive:true});
 addEventListener('pagehide',()=>{S.t=a.currentTime;put('state',JSON.stringify(S))});
-if('mediaSession' in navigator){const m=navigator.mediaSession;m.setActionHandler('play',()=>{if(!a.getAttribute('src')||a.error){seek=S.t;load(true)}else start()});m.setActionHandler('pause',()=>a.pause());m.setActionHandler('nexttrack',next);m.setActionHandler('previoustrack',prev);m.setActionHandler('seekto',d=>{a.currentTime=d.seekTime})}
+if('mediaSession' in navigator){const m=navigator.mediaSession;m.setActionHandler('play',()=>{if(!a.getAttribute('src')||a.error){seek=S.t;load(true)}else start(true)});m.setActionHandler('pause',()=>a.pause());m.setActionHandler('nexttrack',next);m.setActionHandler('previoustrack',prev);m.setActionHandler('seekto',d=>{a.currentTime=d.seekTime})}
 
 /* ---------- app updates ---------- */
-const VER='5';
+const VER='6';
 let swReg=null,swWait=null,updating=false;
 const updUI=()=>{$('upd').hidden=!swWait};
 function applyUpd(){updating=true;if(swWait)swWait.postMessage('skip');else location.reload()}
@@ -615,7 +643,7 @@ if('serviceWorker' in navigator){
 (async()=>{
   await idb();
   try{const s=JSON.parse(await get('state')||'null');if(s)Object.assign(S,s)}catch(e){}
-  theme();a.volume=.5;if(a.volume!==.5)$('volrow').hidden=true;a.volume=S.vol;$('vol').value=S.vol;$('vol').style.setProperty('--p',S.vol*100+'%');setRate(S.rate);renderFx();icon(false);if(!db)toast('Storage unavailable: songs will not be saved');
+  theme();A0.volume=.5;if(A0.volume!==.5)$('volrow').hidden=true;A0.volume=A1.volume=S.vol;$('vol').value=S.vol;$('vol').style.setProperty('--p',S.vol*100+'%');setRate(S.rate);renderFx();icon(false);if(!db)toast('Storage unavailable: songs will not be saved');
   if(S.pos>=0&&cur()){seek=S.t;await load(false)}else renderAll();
 })();
 </script>
