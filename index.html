@@ -118,6 +118,7 @@ li.lift{z-index:2;box-shadow:0 8px 22px rgba(0,0,0,.4)}
 #toast{position:fixed;left:0;right:0;margin:0 auto;width:max-content;bottom:calc(100px + env(safe-area-inset-bottom,0px));background:var(--glass);color:var(--ink);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 6px 24px rgba(0,0,0,.3),0 0 0 .5px var(--line);padding:10px 18px;border-radius:999px;font-size:.9rem;font-weight:500;z-index:20;max-width:90vw;text-align:center}
 #upd{position:fixed;left:0;right:0;margin:0 auto;width:max-content;max-width:94vw;top:calc(env(safe-area-inset-top,0px) + 8px);z-index:30;display:flex;align-items:center;gap:12px;background:var(--glass);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 6px 24px rgba(0,0,0,.3),0 0 0 .5px var(--line);padding:6px 6px 6px 16px;border-radius:999px;font-size:.9rem;font-weight:500;color:var(--ink)}
 #upd button{border:0;border-radius:999px;background:var(--acc);color:var(--on);padding:7px 16px;font-weight:700}
+.log{font:11px/1.45 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;margin:8px 0;user-select:text;-webkit-user-select:text;max-height:260px;overflow:auto}
 body.drop{outline:3px dashed var(--acc);outline-offset:-10px}
 @keyframes fade{from{opacity:0;transform:translateY(8px)}}
 @keyframes rise{from{transform:translateY(100%);opacity:0}}
@@ -181,7 +182,7 @@ li .m:active{background:var(--fill)}
 <audio id="a" preload="metadata" playsinline></audio>
 
 <script>
-const $=id=>document.getElementById(id),A0=$('a');let a=A0;
+const $=id=>document.getElementById(id);let A0=$('a'),a=A0;
 const A1=document.createElement('audio');A1.preload='metadata';A1.setAttribute('playsinline','');A1.hidden=true;document.body.append(A1);
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 const C=2*Math.PI*88,uid=()=>Math.random().toString(36).slice(2,10);
@@ -191,6 +192,8 @@ const EQP={Flat:[0,0,0,0,0],'Bass Boost':[8,5,1,0,0],Rock:[5,3,-2,3,5],Pop:[-1,3
 const RVP={Off:{mix:0,decay:1},Room:{mix:.25,decay:.8},Hall:{mix:.35,decay:2.8}};
 const S={tracks:[],pl:[],order:[],pos:-1,orig:null,shuf:false,hist:[],rep:0,eq:[0,0,0,0,0],rv:{name:'Off',mix:0,decay:1},rate:1,vol:1,t:0,view:null,ui:{theme:'system',acc:null}};
 const T=id=>S.tracks.find(t=>t.id==id),cur=()=>T(S.order[S.pos]);
+let LOG=[];
+const dbg=m=>{LOG.push(new Date().toTimeString().slice(0,8)+' '+m);LOG=LOG.slice(-80);put('log',JSON.stringify(LOG))};
 let impTo=null,seek=0,lt=0,lp=0,sk=false,paintedId=null,lid=0,rsm=false;
 
 /* ---------- storage (IndexedDB) ---------- */
@@ -251,7 +254,7 @@ async function imp(files,plid){
 let ctx,F=[],pre,dry,wet,conv,tt;
 function fx(){
   if(ctx)return;
-  const c=new(window.AudioContext||window.webkitAudioContext)();
+  const c=new(window.AudioContext||window.webkitAudioContext)();c.onstatechange=()=>dbg('audio engine: '+c.state);
   const p=c.createGain(),d=c.createGain(),w=c.createGain(),cv=c.createConvolver(),lim=c.createDynamicsCompressor(),fl=[];
   lim.threshold.value=-3;lim.knee.value=0;lim.ratio.value=20;lim.attack.value=.003;lim.release.value=.1;
   let n=c.createMediaElementSource(A1);n.connect(p);n=p;
@@ -295,7 +298,7 @@ const start=bg=>{
   if(ctx&&ctx.state!=='running')ctx.resume().then(upgrade,()=>{});
   if(a===A1&&bg&&ctx&&ctx.state!=='running')useEl(A0,false);
   else if(a===A0&&pick()===A1)useEl(A1,false);
-  const p=a.play().catch(()=>{});
+  const p=a.play().catch(e=>dbg('play() rejected: '+(e&&e.name)));
   if(a===A1)setTimeout(()=>{if(a===A1&&!a.paused&&ctx&&ctx.state!=='running')useEl(A0)},600);
   return p;
 };
@@ -392,6 +395,15 @@ function renderSettings(L){
     else{ub.textContent='Check for updates';msg.textContent=r=='current'?'You have the latest version.':r=='offline'?'Could not reach the server. Try again when online.':'Updates only work in the installed app.'}
   };
   c3.append(r1,ub,msg);L.append(c3);
+  L.append(el('h3','','Troubleshooting'));
+  const c4=el('div','card'),lg=el('div','log'),rw=el('div','chips');
+  lg.textContent=LOG.slice(-40).join('\n')||'No entries yet.';
+  const br=el('button','chip','Refresh'),bc=el('button','chip','Copy'),bx=el('button','chip','Clear');
+  br.onclick=()=>renderLists();
+  bc.onclick=()=>{navigator.clipboard?navigator.clipboard.writeText(LOG.join('\n')).then(()=>toast('Log copied'),()=>toast('Could not copy')):toast('Could not copy')};
+  bx.onclick=()=>{LOG=[];put('log','[]');renderLists()};
+  rw.append(br,bc,bx);
+  c4.append(el('p','d','Playback log. After a failed resume, reopen the app and check the end of this log.'),lg,rw);L.append(c4);
 }
 function renderLists0(){
   const L=$('lists');L.textContent='';
@@ -561,7 +573,23 @@ H.onpause=()=>{icon(false);tailOff();if('mediaSession' in navigator)navigator.me
 H.onerror=()=>{if(a.getAttribute('src'))toast('This file can\u2019t be played')};
 H.onended=()=>{if(S.rep==2){a.currentTime=0;start()}else next()};
 
-[A0,A1].forEach(el=>Object.keys(H).forEach(k=>{el[k]=e=>{if(el===a)H[k](e)}}));
+const state=()=>'el='+(a===A1?'fx':'plain')+' paused='+a.paused+' engine='+(ctx?ctx.state:'none')+' hidden='+document.hidden+' rate='+a.playbackRate;
+function wire(el){
+  Object.keys(H).forEach(k=>{el[k]=e=>{if(el===a)H[k](e)}});
+  ['play','pause','stalled','waiting','error','ended','emptied'].forEach(ev=>el.addEventListener(ev,()=>{if(el===a)dbg(ev+' ('+state()+')')}));
+}
+[A0,A1].forEach(wire);
+function makeEl(){const e=new Audio();e.preload='metadata';e.setAttribute('playsinline','');e.volume=S.vol;wire(e);return e}
+/* Replace the current player with a brand-new plain one at the same position, so no stale effects/speed state can block resume. */
+function revive(){
+  const src=a.getAttribute('src');if(!src)return false;
+  const pos=a.currentTime||S.t,o=a,e=makeEl();
+  a=A0=e;o.pause();dbg('rebuilding plain player at '+fmt(pos));
+  e.src=src;setRate(S.rate);seek=pos;rsm=false;e.currentTime=pos;
+  e.play().catch(er=>dbg('play() rejected: '+(er&&er.name)));
+  o.removeAttribute('src');o.load();
+  return true;
+}
 
 /* ---------- effects UI ---------- */
 function chips(box,obj,on,fn){box.textContent='';Object.keys(obj).forEach(k=>{const b=el('button','chip'+(on(k)?' on':''),k);b.onclick=()=>fn(k);box.append(b)})}
@@ -610,13 +638,19 @@ addEventListener('keydown',e=>{
   if(e.key=='Escape'&&sheet.classList.contains('open'))closeSheet();
   if(e.code=='Space'&&e.target==document.body){e.preventDefault();toggle()}
 });
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)route()});
+document.addEventListener('visibilitychange',()=>{dbg(document.hidden?'app hidden':'app visible');if(!document.hidden)route()});
 document.addEventListener('pointerdown',()=>{if(needFx()&&a===A0)route()},{passive:true});
 addEventListener('pagehide',()=>{S.t=a.currentTime;put('state',JSON.stringify(S))});
-if('mediaSession' in navigator){const m=navigator.mediaSession;m.setActionHandler('play',()=>{if(!a.getAttribute('src')||a.error){seek=S.t;load(true)}else start(true)});m.setActionHandler('pause',()=>a.pause());m.setActionHandler('nexttrack',next);m.setActionHandler('previoustrack',prev);m.setActionHandler('seekto',d=>{a.currentTime=d.seekTime})}
+if('mediaSession' in navigator){const m=navigator.mediaSession;m.setActionHandler('play',()=>{
+    dbg('remote PLAY ('+state()+')');
+    if(!a.getAttribute('src')||a.error){seek=S.t;load(true)}
+    else if(a!==A0||needFx()||a.playbackRate!==1){if(!revive())start(true)}
+    else start(true);
+  });
+  m.setActionHandler('pause',()=>{dbg('remote PAUSE ('+state()+')');a.pause()});m.setActionHandler('nexttrack',()=>{dbg('remote NEXT');next()});m.setActionHandler('previoustrack',()=>{dbg('remote PREVIOUS');prev()});m.setActionHandler('seekto',d=>{a.currentTime=d.seekTime})}
 
 /* ---------- app updates ---------- */
-const VER='6';
+const VER='7';
 let swReg=null,swWait=null,updating=false;
 const updUI=()=>{$('upd').hidden=!swWait};
 function applyUpd(){updating=true;if(swWait)swWait.postMessage('skip');else location.reload()}
@@ -643,6 +677,8 @@ if('serviceWorker' in navigator){
 (async()=>{
   await idb();
   try{const s=JSON.parse(await get('state')||'null');if(s)Object.assign(S,s)}catch(e){}
+  try{LOG=JSON.parse(await get('log')||'[]')}catch(e){}
+  dbg('app opened, v'+VER);
   theme();A0.volume=.5;if(A0.volume!==.5)$('volrow').hidden=true;A0.volume=A1.volume=S.vol;$('vol').value=S.vol;$('vol').style.setProperty('--p',S.vol*100+'%');setRate(S.rate);renderFx();icon(false);if(!db)toast('Storage unavailable: songs will not be saved');
   if(S.pos>=0&&cur()){seek=S.t;await load(false)}else renderAll();
 })();
